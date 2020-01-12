@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "mylloc.h"
 
@@ -11,24 +12,15 @@ int main(int argc, char **argv)
 {
 
     heap_setup();
-    char* p = (char *)heap_malloc(sizeof(char)*4000);
     print_heap();
-    heap_realloc(p, 2000);
+    char* p = (char *)heap_malloc(sizeof(char)*10);
+    strcpy(p, "Mamma mia");
+    printf("%s\n", p);
     print_heap();
-    heap_realloc(p, 1999); //seg? w sensie size chcialam sprawdzic czy dziala (bo nie zawsze tyle ma co zajete i dostepne)
+    p = heap_realloc(p, 5);
     print_heap();
+    printf("%s\n", p);
 
-
-//    int* tab = (int *)heap_calloc(sizeof(int), 100);
-//    print_heap();
-//
-//    int *r_tab = (int *)heap_realloc(tab, sizeof(int) * 200);
-//    print_heap();
-//
-//    r_tab = (int *)heap_realloc(tab, sizeof(int) * 50);
-//    print_heap();
-
-//    heap_free(r_tab);
     return 0;
 }
 
