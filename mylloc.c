@@ -52,10 +52,8 @@ int heap_setup(void)
     the_Heap.heap_free_space = heap_get_free_space();
     the_Heap.heap_largest_free = heap_get_largest_free_area();
     the_Heap.heap_free_blocks = heap_get_free_gaps_count();
-    pthread_mutex_init(&the_Heap.heap_mutex);
+    pthread_mutex_init(&the_Heap.heap_mutex, NULL);
     update_heap();
-
-    printf("\nHEAP_SIZE: %ld, FENCE_SIZE: %ld, MEMBLOCK_SIZE: %ld\n\n", sizeof(the_Heap), FENCE_SIZE, MEMBLOCK_SIZE);
 
     if (heap_validate()) printf("\n\n\n\n\n\n BLAD \n\n\n\n\n\n");
     return heap_validate();
@@ -604,22 +602,25 @@ void heap_dump_debug_information(void)
     {
         pthread_mutex_lock(&the_Heap.heap_mutex);
         struct memblock_t *p = (struct memblock_t *) the_Heap.start_brk;
-        printf("\n \tTHE HEAP\n\n");
+        printf("\n--------- MEMBLOCKS ---------\n");
 
         while (p != NULL)
         {
-            printf("* address: %ld \n* size: %d", (intptr_t)p, p->size);
-            if (p->filename != NULL)printf("\n* filename: %s \n* fileline: %d", p->filename, p->fileline);
-            printf("\n\n");
+            printf("-----------------------------\n");
+            printf("- address: %ld \n- size: %d \n- taken: %d", (intptr_t)p, p->size, p->taken);
+            if (p->filename != NULL) printf("\n- filename: %s \n- fileline: %d", p->filename, p->fileline);
+            printf("\n-----------------------------\n");
             p = p->next_block;
         }
         size_t heap_size = the_Heap.brk  - the_Heap.start_brk;
         pthread_mutex_unlock(&the_Heap.heap_mutex);
 
-
-        printf("* heap size: %zu \n* used space: %zu \n* free space: %zu \n* largest free: %zu\n\n", heap_size, heap_get_used_space(), heap_get_free_space(), heap_get_largest_free_area());
+        printf("\n--------- HEAP INFO ---------\n");
+        printf("- heap size: %zu \n- used space: %zu \n- free space: %zu \n- largest free: %zu", heap_size, heap_get_used_space(), heap_get_free_space(), heap_get_largest_free_area());
+        printf("\n- sizeofs:\n   * HEAP_SIZE: %ld\n   * FENCE_SIZE: %ld\n   * MEMBLOCK_SIZE: %ld", sizeof(the_Heap), FENCE_SIZE, MEMBLOCK_SIZE);
+        printf("\n-----------------------------\n");
     }
-    else printf("\nTHE HEAP IS DAMAGED! \n\n");
+    else printf("\n-- THE HEAP IS DAMAGED! --\n");
 }
 
 int heap_validate(void)
