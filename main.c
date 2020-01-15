@@ -3,23 +3,33 @@
 
 #include "mylloc.h"
 
-//#define heap_malloc(size) heap_malloc_debug(size, __LINE__, __FILE__)
-//#define heap_calloc(size, num) heap_calloc_debug(size, num, __LINE__, __FILE__)
-//#define heap_realloc(ptr, size) heap_realloc_debug(ptr, size, __LINE__, __FILE__)
+#define heap_malloc(size) heap_malloc_debug(size, __LINE__, __FILE__)
+#define heap_calloc(size, num) heap_calloc_debug(size, num, __LINE__, __FILE__)
+#define heap_realloc(ptr, size) heap_realloc_debug(ptr, size, __LINE__, __FILE__)
+
+#define heap_malloc_aligned(size) heap_malloc_aligned_debug(size, __LINE__, __FILE__)
+#define heap_calloc_aligned(size, num) heap_calloc_aligned_debug(size, num, __LINE__, __FILE__)
+#define heap_realloc_aligned(ptr, size) heap_realloc_aligned_debug(ptr, size, __LINE__, __FILE__)
 
 
 int main(int argc, char **argv)
 {
-
     heap_setup();
-    print_heap();
-    char* p = (char *)heap_malloc(sizeof(char)*10);
-    strcpy(p, "Mamma mia");
-    printf("%s\n", p);
-    print_heap();
-    p = heap_realloc(p, 5);
-    print_heap();
-    printf("%s\n", p);
+    char* p = (char *)heap_malloc_aligned(sizeof(char)*1000);
+    heap_dump_debug_information();
+    char* pp = heap_malloc(5);
+    heap_dump_debug_information();
+    heap_free(p);
+    heap_dump_debug_information();
+    char* ppp = (char *)heap_malloc_aligned(sizeof(char)*5);
+    heap_dump_debug_information();
+    printf("\nVALIDATE: %d\n", heap_validate());
+
+    heap_restart();
+    heap_setup();
+    char* pr = (char *)heap_malloc_aligned(sizeof(char)*1000);
+    heap_dump_debug_information();
+    printf("\nVALIDATE: %d\n", heap_validate());
 
     return 0;
 }
