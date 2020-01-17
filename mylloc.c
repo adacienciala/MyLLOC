@@ -12,6 +12,10 @@
 #define SET_FENCES(ptr, count) memcpy((void *)((intptr_t)(ptr) + MEMBLOCK_SIZE), fences.open, FENCE_SIZE); \
 memcpy((void *)((intptr_t)(ptr) + MEMBLOCK_SIZE + FENCE_SIZE + count), fences.close, FENCE_SIZE)
 
+// TO DO:
+// - usunac printy w validate
+// - czasami sie pieprzy w malloc_aligned sterta (-3)
+
 // REFACTOR:
 // - int na size_t
 // - intptr_t / void * / struct memblock_t * - ogarniecie lol
@@ -643,7 +647,8 @@ int heap_validate(void)
     if ((void *)the_Heap.start_brk == NULL || (void *)the_Heap.brk == NULL)
     {
         pthread_mutex_unlock(&heap_mutex);
-        return -5;
+        printf("-1");
+        return -1;
     }
 
     // HEAP CRC
@@ -656,7 +661,11 @@ int heap_validate(void)
     }
     the_Heap.heap_crc = new_heap_crc;
     pthread_mutex_unlock(&heap_mutex);
-    if (prev_heap_crc != new_heap_crc) return -2;
+    if (prev_heap_crc != new_heap_crc)
+    {
+        printf("-2hea");
+        return -2;
+    }
 
     // HEAP DATA
     int used_space = heap_get_used_space();
@@ -670,6 +679,7 @@ int heap_validate(void)
     if (the_Heap.heap_used_space != used_space || the_Heap.heap_used_blocks != used_blocks || the_Heap.heap_largest_used != largest_used || the_Heap.heap_free_space != free_space || the_Heap.heap_free_blocks != free_blocks || the_Heap.heap_largest_free != largest_free)
     {
         pthread_mutex_unlock(&heap_mutex);
+        printf("-3");
         return -3;
     }
 
@@ -682,6 +692,7 @@ int heap_validate(void)
             if (memcmp(fences.open, (void *)((intptr_t)p + MEMBLOCK_SIZE), FENCE_SIZE) != 0 || memcmp(fences.close, (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE + p->size), FENCE_SIZE) != 0)
             {
                 pthread_mutex_unlock(&heap_mutex);
+                printf("-4");
                 return -4;
             }
         }
@@ -693,10 +704,18 @@ int heap_validate(void)
         pthread_mutex_lock(&heap_mutex);
         int new_crc = p->crc;
         pthread_mutex_unlock(&heap_mutex);
-        if (prev_crc != new_crc) return -2;
+        if (prev_crc != new_crc)
+        {
+            printf("-2node");
+            return -2;
+        }
 
         // PREV && NEXT
-        if (get_pointer_type(p->prev_block) == pointer_out_of_heap || get_pointer_type(p->next_block) == pointer_out_of_heap) return -5;
+        if (get_pointer_type(p->prev_block) == pointer_out_of_heap || get_pointer_type(p->next_block) == pointer_out_of_heap)
+        {
+            printf("-5");
+            return -5;
+        }
 
         pthread_mutex_lock(&heap_mutex);
         p = p->next_block;

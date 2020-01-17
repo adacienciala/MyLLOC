@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "mylloc.h"
+
+#define PAGE_SIZE 4096
+#define MS 1000
 
 #define heap_malloc(size) heap_malloc_debug(size, __LINE__, __FILE__)
 #define heap_calloc(size, num) heap_calloc_debug(size, num, __LINE__, __FILE__)
@@ -10,6 +14,101 @@
 #define heap_malloc_aligned(size) heap_malloc_aligned_debug(size, __LINE__, __FILE__)
 #define heap_calloc_aligned(size, num) heap_calloc_aligned_debug(size, num, __LINE__, __FILE__)
 #define heap_realloc_aligned(ptr, size) heap_realloc_aligned_debug(ptr, size, __LINE__, __FILE__)
+
+void* f_0 (void* none)
+{
+    char **aa = (char **)heap_malloc(sizeof(char *) * 20);
+    assert(aa != NULL);
+    for (int i=0; i < 20; ++i)
+    {
+        aa[i] = heap_malloc(sizeof(char) * 100);
+        assert(aa[i] != NULL);
+        usleep(500*MS);
+    }
+    for (int i=0; i < 20; ++i)
+    {
+        heap_free(aa[i]);
+        assert(get_pointer_type(aa[i]) != pointer_valid);
+        usleep(300*MS);
+    }
+}
+
+void* f_1 (void* none)
+{
+    char **aa = (char **)heap_malloc_aligned(sizeof(char *) * 20);
+    assert(aa != NULL);
+    for (int i=0; i < 20; ++i)
+    {
+        aa[i] = heap_malloc_aligned(sizeof(char) * 100);
+        assert(aa[i] != NULL);
+        usleep(500*MS);
+    }
+    for (int i=0; i < 20; ++i)
+    {
+        heap_free(aa[i]);
+        assert(get_pointer_type(aa[i]) != pointer_valid);
+        usleep(300*MS);
+    }
+}
+
+void* f_2 (void* none)
+{
+    char **aa = (char **)heap_realloc_aligned(NULL, sizeof(char *) * 20);
+    assert(aa != NULL);
+    assert(((intptr_t)aa & (intptr_t)(PAGE_SIZE - 1)) == 0);
+    for (int i=0; i < 20; ++i)
+    {
+        aa[i] = heap_realloc_aligned(NULL, sizeof(char) * 50);
+        assert(aa[i] != NULL);
+        assert(((intptr_t)aa[i] & (intptr_t)(PAGE_SIZE - 1)) == 0);
+        usleep(370*MS);
+        aa[i] = heap_realloc_aligned(aa[i], sizeof(char) * 70);
+        usleep(150*MS);
+    }
+    for (int i=0; i < 20; ++i)
+    {
+        heap_realloc_aligned(aa[i], 0);
+        assert(get_pointer_type(aa[i]) != pointer_valid);
+        usleep(450*MS);
+    }
+}
+
+void* f_3 (void* none)
+{
+    char **aa = (char **)heap_calloc(sizeof(char *), 20);
+    assert(aa != NULL);
+    for (int i=0; i < 20; ++i)
+    {
+        aa[i] = heap_calloc(sizeof(char), 1500);
+        assert(aa[i] != NULL);
+        usleep(180*MS);
+    }
+    for (int i=0; i < 20; ++i)
+    {
+        heap_free(aa[i]);
+        assert(get_pointer_type(aa[i]) != pointer_valid);
+        usleep(300*MS);
+    }
+}
+
+void* f_4 (void* none)
+{
+    char **aa = (char **)heap_calloc_aligned(sizeof(char *), 20);
+    assert(aa != NULL);
+    for (int i=0; i < 20; ++i)
+    {
+        aa[i] = heap_calloc_aligned(sizeof(char), 1500);
+        assert(((intptr_t)aa[i] & (intptr_t)(PAGE_SIZE - 1)) == 0);
+        assert(aa[i] != NULL);
+        usleep(270*MS);
+    }
+    for (int i=0; i < 20; ++i)
+    {
+        heap_free(aa[i]);
+        assert(get_pointer_type(aa[i]) != pointer_valid);
+        usleep(50*MS);
+    }
+}
 
 void tests(void)
 {
@@ -24,13 +123,15 @@ void tests(void)
     // [8] - malloc aligned function         //
     // [9] - calloc aligned function         //
     // [10] - realloc aligned function       //
-    // [11] - thread safety                  //
+    // [11] - heap_get_* functions           //
+    // [12] - thread safety                  //
     // ------------------------------------- //
 
     printf("\n---- START TESTS ----\n\n");
 
     // ---------------- [1] ---------------- //
     // -----multiple malloc allocations----- //
+    // ------------------------------------- //
 
     int status = heap_setup();
     assert(status == 0);
@@ -50,6 +151,10 @@ void tests(void)
 
     // ---------------- [2] ---------------- //
     // ------same addresses after free------ //
+    // ------------------------------------- //
+    // - malloc some space and free it       //
+    // - malloc perfect fits                 //
+    // ------------------------------------- //
 
     for (int i = 0; i<100; ++i)
     {
@@ -69,6 +174,10 @@ void tests(void)
 
     // ---------------- [3] ---------------- //
     // --------overwriting the fences------- //
+    // ------------------------------------- //
+    // - have space for 99 chars + 1 '\0'    //
+    // - strcat 100 chars + 1 '\0'           //
+    // ------------------------------------- //
 
     strcpy(arr[0], "");
     for (int i = 0; i<100; ++i)
@@ -81,6 +190,7 @@ void tests(void)
 
     // ---------------- [4] ---------------- //
     // ---------restarting the heap--------- //
+    // ------------------------------------- //
 
     heap_restart();
     assert((the_Heap.brk - the_Heap.start_brk) == 0);
@@ -91,6 +201,9 @@ void tests(void)
 
     // ---------------- [5] ---------------- //
     // ----------calloc allocation---------- //
+    // - malloc space, write stuff, free it  //
+    // - calloc perfect size, count bytes    //
+    // ------------------------------------- //
 
     arr = (char **)heap_calloc(sizeof(char *), 100);
     assert(arr != NULL);
@@ -125,6 +238,12 @@ void tests(void)
 
     // ---------------- [6] ---------------- //
     // --------different free options------- //
+    // ------------------------------------- //
+    // - free single blocks (no coalescing)  //
+    // - free left blocks (coalescing <-)    //
+    // - free right blocks (coalescing ->)   //
+    // - free middle blocks (coalescing <->) //
+    // ------------------------------------- //
 
     char* arr2[100];
     assert(heap_get_free_gaps_count() == 0);
@@ -163,6 +282,7 @@ void tests(void)
 
     // ---------------- [7] ---------------- //
     // -----------realloc function---------- //
+    // ------------------------------------- //
 
     int *a = (int *)heap_realloc(NULL, sizeof(int));
     assert(a != NULL);
@@ -193,24 +313,96 @@ void tests(void)
 
     // ---------------- [8] ---------------- //
     // -------malloc aligned function------- //
+    // ------------------------------------- //
+
+    char** b = (char **)heap_malloc_aligned(sizeof(char *) * 50);
+    assert(b != NULL);
+    for (int i = 0; i < 50; ++i)
+    {
+        b[i] = (char *)heap_malloc_aligned(sizeof(char) * (4050+1));
+        assert(get_pointer_type(b[i]) == pointer_valid);
+        assert(((intptr_t)b[i] & (intptr_t)(PAGE_SIZE - 1)) == 0);
+    }
+
+    for (int i = 0; i < 50; ++i)
+    {
+        heap_free(b[i]);
+        assert(get_pointer_type(b[i]) != pointer_valid);
+    }
 
     printf("-- test8 passed\n");
 
     // ---------------- [9] ---------------- //
     // -------calloc aligned function------- //
+    // ------------------------------------- //
+
+    for (int i = 0; i < 50; ++i)
+    {
+        b[i] = (char *)heap_malloc_aligned(sizeof(char) * 10);
+        assert(get_pointer_type(b[i]) == pointer_valid);
+        assert(((intptr_t)b[i] & (intptr_t)(PAGE_SIZE - 1)) == 0);
+        for (int j=0; j < 5; ++j)
+        {
+            b[i][j] = (char)('a'+j);
+        }
+        heap_free(b[i]);
+        b[i] = (char *)heap_calloc_aligned(sizeof(char), 10);
+        assert(get_pointer_type(b[i]) == pointer_valid);
+        assert(((intptr_t)b[i] & (intptr_t)(PAGE_SIZE - 1)) == 0);
+        for (int j=0; j < 5; ++j)
+        {
+            assert(b[i][j] == 0);
+        }
+    }
 
     printf("-- test9 passed\n");
 
     // ---------------- [10] --------------- //
     // -------realloc aligned function------ //
+    // ------------------------------------- //
 
     printf("-- test10 passed\n");
 
     // ---------------- [11] --------------- //
-    // ------------thread safety------------ //
+    // ---------heap_get_* functions-------- //
+    // ------------------------------------- //
+
+
 
     printf("-- test11 passed\n");
 
+    // ---------------- [12] --------------- //
+    // ------------thread safety------------ //
+    // ------------------------------------- //
+
+    heap_restart();
+    assert((the_Heap.brk - the_Heap.start_brk) == 0);
+    status = heap_setup();
+    assert(status == 0);
+
+    pthread_t thread[10];
+    void * (*fun[5]) (void *);
+    fun[0] = f_0;
+    fun[1] = f_1;
+    fun[2] = f_2;
+    fun[3] = f_3;
+    fun[4] = f_4;
+
+    for (int i = 0; i < 5; ++i)
+    {
+        pthread_create(&thread[i], NULL, fun[i], NULL);
+        usleep(100*MS);
+    }
+    for (int i = 0; i < 5; ++i)
+    {
+        pthread_join(thread[i], NULL);
+    }
+    assert(heap_validate() == 0);
+
+    printf("-- test12 passed\n");
+
+    heap_restart();
+    assert((the_Heap.brk - the_Heap.start_brk) == 0);
 
     printf("\n---- TESTS  DONE ----\n");
 }
