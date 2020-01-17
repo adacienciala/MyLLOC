@@ -16,6 +16,8 @@ enum pointer_type_t
     pointer_valid
 };
 
+pthread_mutex_t heap_mutex;
+
 struct fence_t
 {
     int open[16];
@@ -43,7 +45,6 @@ struct memory_list_t
     size_t heap_free_space;
     size_t heap_largest_free;
     uint64_t heap_free_blocks;
-    pthread_mutex_t heap_mutex;
     int heap_crc;
 } the_Heap;
 
