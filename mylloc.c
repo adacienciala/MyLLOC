@@ -22,12 +22,18 @@ memcpy((void *)((intptr_t)(ptr) + MEMBLOCK_SIZE + FENCE_SIZE + count), fences.cl
 
 int heap_setup(void)
 {
-	the_Heap.start_brk = (intptr_t) custom_sbrk(MEMBLOCK_SIZE * 2);
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&heap_mutex, &attr);
+
+    pthread_mutex_lock(&heap_mutex);
+    the_Heap.start_brk = (intptr_t) custom_sbrk(MEMBLOCK_SIZE * 2);
 	if ((void *)the_Heap.start_brk == NULL)
     {
-        pthread_mutex_lock(&heap_mutex);
+        pthread_mutex_unlock(&heap_mutex);
         return -1;
     }
+
 
 	the_Heap.brk = the_Heap.start_brk + MEMBLOCK_SIZE;
 
@@ -57,9 +63,9 @@ int heap_setup(void)
     the_Heap.heap_free_space = heap_get_free_space();
     the_Heap.heap_largest_free = heap_get_largest_free_area();
     the_Heap.heap_free_blocks = heap_get_free_gaps_count();
-    pthread_mutex_init(&heap_mutex, NULL);
     update_heap();
 
+    pthread_mutex_unlock(&heap_mutex);
     return heap_validate();
 }
 
@@ -75,9 +81,9 @@ void* heap_calloc(size_t number, size_t size)
 
 void heap_free(void* memblock)
 {
+    pthread_mutex_lock(&heap_mutex);
     if (get_pointer_type(memblock) == pointer_valid && heap_validate() == 0)
     {
-        pthread_mutex_lock(&heap_mutex);
         struct memblock_t *p = (struct memblock_t *)((intptr_t )memblock - FENCE_SIZE - MEMBLOCK_SIZE);
         p->taken = 0;
 
@@ -100,6 +106,7 @@ void heap_free(void* memblock)
         update_crc(p->prev_block);
         update_crc(p);
     }
+    pthread_mutex_unlock(&heap_mutex);
 }
 
 void* heap_realloc(void* memblock, size_t size)
@@ -113,9 +120,14 @@ void* heap_realloc(void* memblock, size_t size)
 
 void* heap_malloc_debug(size_t count, int fileline, const char* filename)
 {
-    if (count == 0 || heap_validate()) return NULL;
-
     pthread_mutex_lock(&heap_mutex);
+
+    if (count == 0 || heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+
     struct memblock_t *p = (struct memblock_t *)the_Heap.start_brk;
     int found = 0;
     while (p != NULL)
@@ -145,27 +157,30 @@ void* heap_malloc_debug(size_t count, int fileline, const char* filename)
         ((struct memblock_t *)the_Heap.brk)->prev_block = p;
         ((struct memblock_t *)the_Heap.brk)->fileline = fileline;
         ((struct memblock_t *)the_Heap.brk)->filename = (char *)filename;
-        pthread_mutex_unlock(&heap_mutex);
         update_crc(((struct memblock_t *)the_Heap.brk)->prev_block);
         update_crc((struct memblock_t *)the_Heap.brk);
 
-        pthread_mutex_lock(&heap_mutex);
         p->size = count;
         p->taken = 1;
         p->next_block = (struct memblock_t *)the_Heap.brk;
         p->fileline = fileline;
         p->filename = (char *)filename;
-        pthread_mutex_unlock(&heap_mutex);
         update_crc(p->prev_block);
         update_crc(p->next_block);
         update_crc(p);
-        pthread_mutex_lock(&heap_mutex);
         SET_FENCES(p, count);
         the_Heap.brk = (the_Heap.brk) + MEMBLOCK_SIZE;
-        pthread_mutex_unlock(&heap_mutex);
 
-        if (heap_validate()) return NULL;
-        else return (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE);
+        if (heap_validate())
+        {
+            pthread_mutex_unlock(&heap_mutex);
+            return NULL;
+        }
+        else
+        {
+            pthread_mutex_unlock(&heap_mutex);
+            return (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE);
+        }
     }
 
     // add a new memblock, if enough space
@@ -182,11 +197,9 @@ void* heap_malloc_debug(size_t count, int fileline, const char* filename)
         ((struct memblock_t *)temp)->size = p->size - (int)(MEMBLOCK_SIZE + FENCE_SIZE*2 + count);
         ((struct memblock_t *)temp)->fileline = fileline;
         ((struct memblock_t *)temp)->filename = (char *)filename;
-        pthread_mutex_unlock(&heap_mutex);
         update_crc(((struct memblock_t *)temp)->next_block);
         update_crc(((struct memblock_t *)temp)->prev_block);
         update_crc((struct memblock_t *)temp);
-        pthread_mutex_lock(&heap_mutex);
     }
 
     p->size = (int)((intptr_t)p->next_block - ((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE*2));
@@ -194,55 +207,86 @@ void* heap_malloc_debug(size_t count, int fileline, const char* filename)
     p->taken = 1;
     p->fileline = fileline;
     p->filename = (char *)filename;
-    pthread_mutex_unlock(&heap_mutex);
     update_crc(p->prev_block);
     update_crc(p->next_block);
     update_crc(p);
 
-    if (heap_validate()) return NULL;
-    else return (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE);
+    if (heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+    else
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE);
+    }
 }
 
 void* heap_calloc_debug(size_t number, size_t size, int fileline, const char* filename)
 {
-    if (number == 0 || size == 0 || heap_validate()) return NULL;
+    pthread_mutex_lock(&heap_mutex);
+
+    if (number == 0 || size == 0 || heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
 
     void *p = heap_malloc_debug(number * size, fileline, filename);
 
-    pthread_mutex_lock(&heap_mutex);
     if (p != NULL) memset (p, 0, number*size);
-    pthread_mutex_unlock(&heap_mutex);
 
-    if (heap_validate()) return NULL;
-    else return p;
+    if (heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+    else
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return p;
+    }
 }
 void* heap_realloc_debug(void* memblock, size_t size, int fileline, const char* filename)
 {
-    if (heap_validate()) return NULL;
-    if (memblock == NULL) return heap_malloc_debug(size, fileline, filename);
+    pthread_mutex_lock(&heap_mutex);
+
+    if (heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+    if (memblock == NULL)
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return heap_malloc_debug(size, fileline, filename);
+    }
 
     if (size == 0)
     {
         heap_free(memblock);
+        pthread_mutex_unlock(&heap_mutex);
         return NULL;
     }
 
-    pthread_mutex_lock(&heap_mutex);
     struct memblock_t *p = (struct memblock_t *)(((intptr_t )memblock - (MEMBLOCK_SIZE + FENCE_SIZE)));
     int size_to_copy = (p->size > size) ? (int)size : p->size;
-    pthread_mutex_unlock(&heap_mutex);
 
     heap_free(memblock);
     void *new = heap_malloc_debug(size, fileline, filename);
-    if (new != NULL)
-    {
-        pthread_mutex_lock(&heap_mutex);
-        memcpy(new, memblock, size_to_copy);
-        pthread_mutex_unlock(&heap_mutex);
-    }
+    if (new != NULL) memcpy(new, memblock, size_to_copy);
 
-    if (heap_validate()) return NULL;
-    else return new;
+    if (heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+    else
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return new;
+    }
 }
 
 ////////////////////////////////////////
@@ -271,9 +315,13 @@ void* heap_realloc_aligned(void* memblock, size_t size)
 
 void* heap_malloc_aligned_debug(size_t count, int fileline, const char* filename)
 {
-    if (count == 0 || heap_validate()) return NULL;
-
     pthread_mutex_lock(&heap_mutex);
+    if (count == 0 || heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+
     struct memblock_t *p = (struct memblock_t *)the_Heap.start_brk;
     int found = 0;
     while (p != NULL)
@@ -308,11 +356,9 @@ void* heap_malloc_aligned_debug(size_t count, int fileline, const char* filename
         ((struct memblock_t *)the_Heap.brk)->prev_block = p;
         ((struct memblock_t *)the_Heap.brk)->filename = (char *)filename;
         ((struct memblock_t *)the_Heap.brk)->fileline = fileline;
-        pthread_mutex_unlock(&heap_mutex);
         update_crc(((struct memblock_t *)the_Heap.brk)->prev_block);
         update_crc((struct memblock_t *)the_Heap.brk);
 
-        pthread_mutex_lock(&heap_mutex);
         p->size = count;
         p->taken = 1;
         p->next_block = (struct memblock_t *)the_Heap.brk;
@@ -320,17 +366,22 @@ void* heap_malloc_aligned_debug(size_t count, int fileline, const char* filename
         temp->next_block = p;
         p->filename = (char *)filename;
         p->fileline = fileline;
-        pthread_mutex_unlock(&heap_mutex);
         update_crc(p->prev_block);
         update_crc(p->next_block);
         update_crc(p);
-        pthread_mutex_lock(&heap_mutex);
         SET_FENCES(p, count);
         the_Heap.brk = the_Heap.brk + MEMBLOCK_SIZE;
-        pthread_mutex_unlock(&heap_mutex);
 
-        if (heap_validate()) return NULL;
-        else return (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE);
+        if (heap_validate())
+        {
+            pthread_mutex_unlock(&heap_mutex);
+            return NULL;
+        }
+        else
+        {
+            pthread_mutex_unlock(&heap_mutex);
+            return (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE);
+        }
     }
 
     // add a new memblock, if enough space
@@ -347,11 +398,9 @@ void* heap_malloc_aligned_debug(size_t count, int fileline, const char* filename
         ((struct memblock_t *)temp)->filename = (char *)filename;
         ((struct memblock_t *)temp)->fileline = fileline;
         ((struct memblock_t *)temp)->size = p->size - (int)(MEMBLOCK_SIZE + FENCE_SIZE*2 + count);
-        pthread_mutex_unlock(&heap_mutex);
         update_crc(((struct memblock_t *)temp)->next_block);
         update_crc(((struct memblock_t *)temp)->prev_block);
         update_crc((struct memblock_t *)temp);
-        pthread_mutex_lock(&heap_mutex);
     }
 
     p->size = (int)((intptr_t)p->next_block - ((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE*2));
@@ -359,27 +408,46 @@ void* heap_malloc_aligned_debug(size_t count, int fileline, const char* filename
     p->taken = 1;
     p->filename = (char *)filename;
     p->fileline = fileline;
-    pthread_mutex_unlock(&heap_mutex);
     update_crc(p->prev_block);
     update_crc(p->next_block);
     update_crc(p);
 
-    if (heap_validate()) return NULL;
-    else return (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE);
+    if (heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+    else
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return (void *)((intptr_t)p + MEMBLOCK_SIZE + FENCE_SIZE);
+    }
 }
 
 void* heap_calloc_aligned_debug(size_t number, size_t size, int fileline, const char* filename)
 {
-    if (number == 0 || size == 0 || heap_validate()) return NULL;
+    pthread_mutex_lock(&heap_mutex);
+
+    if (number == 0 || size == 0 || heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
 
     void *p = heap_malloc_aligned_debug(number * size, fileline, filename);
 
-    pthread_mutex_lock(&heap_mutex);
     if (p != NULL) memset (p, 0, number*size);
-    pthread_mutex_unlock(&heap_mutex);
 
-    if (heap_validate()) return NULL;
-    else return p;
+    if (heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+    else
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return p;
+    }
 }
 
 void* heap_realloc_aligned_debug(void* memblock, size_t size, int fileline, const char* filename)
@@ -392,24 +460,31 @@ void* heap_realloc_aligned_debug(void* memblock, size_t size, int fileline, cons
         return NULL;
     }
 
-    if (heap_validate() || get_pointer_type(memblock) != pointer_valid) return NULL;
-
     pthread_mutex_lock(&heap_mutex);
+
+    if (heap_validate() || get_pointer_type(memblock) != pointer_valid)
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+
     struct memblock_t *p = (struct memblock_t *)(((intptr_t )memblock - (MEMBLOCK_SIZE + FENCE_SIZE)));
     int size_to_copy = (p->size > size) ? (int)size : p->size;
-    pthread_mutex_unlock(&heap_mutex);
 
     heap_free(memblock);
     void *new = heap_malloc_aligned_debug(size, fileline, filename);
-    if (new != NULL)
-    {
-        pthread_mutex_lock(&heap_mutex);
-        memcpy(new, memblock, size_to_copy);
-        pthread_mutex_unlock(&heap_mutex);
-    }
+    if (new != NULL) memcpy(new, memblock, size_to_copy);
 
-    if (heap_validate()) return NULL;
-    else return new;
+    if (heap_validate())
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return NULL;
+    }
+    else
+    {
+        pthread_mutex_unlock(&heap_mutex);
+        return new;
+    }
 }
 
 ////////////////////////////////////////
@@ -567,10 +642,11 @@ enum pointer_type_t get_pointer_type(const const void* pointer)
 
 void* heap_get_data_block_start(const void* pointer)
 {
-    if (get_pointer_type(pointer) == pointer_valid) return (void *)pointer;
-    if (get_pointer_type(pointer) != pointer_inside_data_block) return NULL;
-
     pthread_mutex_lock(&heap_mutex);
+
+    if (get_pointer_type(pointer) == pointer_valid) { pthread_mutex_unlock(&heap_mutex); return (void *)pointer; }
+    if (get_pointer_type(pointer) != pointer_inside_data_block) { pthread_mutex_unlock(&heap_mutex); return NULL; }
+
     struct memblock_t * p = (struct memblock_t *)the_Heap.start_brk;
     intptr_t pointer_copy = (intptr_t)pointer;
     while (p != NULL)
@@ -589,9 +665,10 @@ void* heap_get_data_block_start(const void* pointer)
 
 size_t heap_get_block_size(const const void* memblock)
 {
-    if ((get_pointer_type(memblock) != pointer_valid)) return 0;
-
     pthread_mutex_lock(&heap_mutex);
+
+    if ((get_pointer_type(memblock) != pointer_valid)) { pthread_mutex_unlock(&heap_mutex); return 0; }
+
     struct memblock_t * p = (struct memblock_t *)the_Heap.start_brk;
     intptr_t pointer_copy = (intptr_t)memblock;
     while (p != NULL)
@@ -610,9 +687,9 @@ size_t heap_get_block_size(const const void* memblock)
 
 void heap_dump_debug_information(void)
 {
+    pthread_mutex_lock(&heap_mutex);
     if (heap_validate() == 0)
     {
-        pthread_mutex_lock(&heap_mutex);
         struct memblock_t *p = (struct memblock_t *) the_Heap.start_brk;
         printf("\n--------- MEMBLOCKS ---------\n");
 
@@ -633,6 +710,7 @@ void heap_dump_debug_information(void)
         printf("\n-----------------------------\n");
     }
     else printf("\n-- THE HEAP IS DAMAGED! --\n");
+    pthread_mutex_unlock(&heap_mutex);
 }
 
 int heap_validate(void)
@@ -660,9 +738,9 @@ int heap_validate(void)
         new_heap_crc += *(temp++);
     }
     the_Heap.heap_crc = new_heap_crc;
-    pthread_mutex_unlock(&heap_mutex);
     if (prev_heap_crc != new_heap_crc)
     {
+        pthread_mutex_unlock(&heap_mutex);
         printf("-2hea");
         return -2;
     }
@@ -675,7 +753,6 @@ int heap_validate(void)
     int largest_free = heap_get_largest_free_area();
     int free_blocks = heap_get_free_gaps_count();
 
-    pthread_mutex_lock(&heap_mutex);
     if (the_Heap.heap_used_space != used_space || the_Heap.heap_used_blocks != used_blocks || the_Heap.heap_largest_used != largest_used || the_Heap.heap_free_space != free_space || the_Heap.heap_free_blocks != free_blocks || the_Heap.heap_largest_free != largest_free)
     {
         pthread_mutex_unlock(&heap_mutex);
@@ -699,14 +776,12 @@ int heap_validate(void)
 
         // CRC
         int prev_crc = p->crc;
-        pthread_mutex_unlock(&heap_mutex);
         update_crc(p);
-        pthread_mutex_lock(&heap_mutex);
         int new_crc = p->crc;
-        pthread_mutex_unlock(&heap_mutex);
         if (prev_crc != new_crc)
         {
             printf("-2node");
+            pthread_mutex_unlock(&heap_mutex);
             return -2;
         }
 
@@ -714,6 +789,7 @@ int heap_validate(void)
         if (get_pointer_type(p->prev_block) == pointer_out_of_heap || get_pointer_type(p->next_block) == pointer_out_of_heap)
         {
             printf("-5");
+            pthread_mutex_unlock(&heap_mutex);
             return -5;
         }
 
@@ -743,13 +819,13 @@ void update_crc (struct memblock_t *p)
         }
         p->crc = new_crc;
         pthread_mutex_unlock(&heap_mutex);
-
         update_heap();
     }
 }
 
 void update_heap()
 {
+    pthread_mutex_lock(&heap_mutex);
     int used_space = heap_get_used_space();
     int largest_used = heap_get_largest_used_block_size();
     int used_blocks = heap_get_used_blocks_count();
@@ -757,7 +833,6 @@ void update_heap()
     int largest_free = heap_get_largest_free_area();
     int free_blocks = heap_get_free_gaps_count();
 
-    pthread_mutex_lock(&heap_mutex);
     the_Heap.heap_used_space = used_space;
     the_Heap.heap_largest_used = largest_used;
     the_Heap.heap_used_blocks = used_blocks;
@@ -779,7 +854,6 @@ void heap_restart()
 {
     pthread_mutex_lock(&heap_mutex);
     custom_sbrk(-1 * (the_Heap.brk - the_Heap.start_brk));
-    pthread_mutex_destroy(&heap_mutex);
     the_Heap.start_brk = 0;
     the_Heap.brk = 0;
     the_Heap.heap_used_space = 0;
@@ -789,4 +863,7 @@ void heap_restart()
     the_Heap.heap_largest_free = 0;
     the_Heap.heap_free_blocks = 0;
     pthread_mutex_unlock(&heap_mutex);
+
+    pthread_mutexattr_destroy(&attr);
+    pthread_mutex_destroy(&heap_mutex);
 }

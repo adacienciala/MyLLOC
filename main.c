@@ -128,7 +128,7 @@ void tests(void)
     // ------------------------------------- //
 
     printf("\n---- START TESTS ----\n\n");
-
+/*
     // ---------------- [1] ---------------- //
     // -----multiple malloc allocations----- //
     // ------------------------------------- //
@@ -367,8 +367,6 @@ void tests(void)
     // ---------heap_get_* functions-------- //
     // ------------------------------------- //
 
-
-
     printf("-- test11 passed\n");
 
     // ---------------- [12] --------------- //
@@ -377,16 +375,16 @@ void tests(void)
 
     heap_restart();
     assert((the_Heap.brk - the_Heap.start_brk) == 0);
-    status = heap_setup();
+    */int status = heap_setup();
     assert(status == 0);
 
     pthread_t thread[10];
     void * (*fun[5]) (void *);
-    fun[0] = f_0;
+    fun[0] = f_1;
     fun[1] = f_1;
-    fun[2] = f_2;
-    fun[3] = f_3;
-    fun[4] = f_4;
+    fun[2] = f_1;
+    fun[3] = f_1;
+    fun[4] = f_1;
 
     for (int i = 0; i < 5; ++i)
     {
@@ -396,6 +394,7 @@ void tests(void)
     for (int i = 0; i < 5; ++i)
     {
         pthread_join(thread[i], NULL);
+        printf("%d in\n", i);
     }
     assert(heap_validate() == 0);
 
@@ -409,7 +408,10 @@ void tests(void)
 
 int main(int argc, char **argv)
 {
-    tests();
+    for (int i=0; i < 4; ++i)
+    {
+        tests();
+    }
 
     return 0;
 }

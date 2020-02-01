@@ -17,6 +17,7 @@ enum pointer_type_t
 };
 
 pthread_mutex_t heap_mutex;
+pthread_mutexattr_t attr;
 
 struct fence_t
 {
