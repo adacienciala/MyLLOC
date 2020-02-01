@@ -123,12 +123,11 @@ void tests(void)
     // [8] - malloc aligned function         //
     // [9] - calloc aligned function         //
     // [10] - realloc aligned function       //
-    // [11] - heap_get_* functions           //
-    // [12] - thread safety                  //
+    // [11] - thread safety                  //
     // ------------------------------------- //
 
     printf("\n---- START TESTS ----\n\n");
-/*
+
     // ---------------- [1] ---------------- //
     // -----multiple malloc allocations----- //
     // ------------------------------------- //
@@ -361,30 +360,58 @@ void tests(void)
     // -------realloc aligned function------ //
     // ------------------------------------- //
 
+    heap_restart();
+    assert((the_Heap.brk - the_Heap.start_brk) == 0);
+    status = heap_setup();
+    assert(status == 0);
+
+    a = (int *)heap_realloc_aligned(NULL, sizeof(int));
+    assert(a != NULL);
+    assert(((intptr_t)a & (intptr_t)(PAGE_SIZE - 1)) == 0);
+    *a = 666;
+    assert(*a == 666);
+    heap_realloc_aligned(a, 0);
+    assert(get_pointer_type(a) != pointer_valid);
+    assert(heap_get_used_blocks_count() == 0 && heap_validate() == 0);
+    assert(((intptr_t)a & (intptr_t)(PAGE_SIZE - 1)) == 0);
+
+    aa = (int *)heap_realloc_aligned(NULL, sizeof(int) * 5);
+    assert(aa != NULL);
+    assert(((intptr_t)aa & (intptr_t)(PAGE_SIZE - 1)) == 0);
+    memcpy(aa, tab, sizeof(tab));
+    aa = heap_realloc_aligned(aa, sizeof(char) * 3);
+    assert(((intptr_t)aa & (intptr_t)(PAGE_SIZE - 1)) == 0);
+    assert(aa != NULL);
+    assert(memcmp(aa, tab, 3) == 0);
+    assert(memcmp(aa, tab, 5) != 0);
+    aa = heap_realloc_aligned(aa, sizeof(char) * 5);
+    assert(aa != NULL);
+    assert(((intptr_t)aa & (intptr_t)(PAGE_SIZE - 1)) == 0);
+    assert(memcmp(aa, tab, 3) == 0);
+
+    heap_restart();
+    assert((the_Heap.brk - the_Heap.start_brk) == 0);
+    status = heap_setup();
+    assert(status == 0);
+
     printf("-- test10 passed\n");
 
     // ---------------- [11] --------------- //
-    // ---------heap_get_* functions-------- //
-    // ------------------------------------- //
-
-    printf("-- test11 passed\n");
-
-    // ---------------- [12] --------------- //
     // ------------thread safety------------ //
     // ------------------------------------- //
 
     heap_restart();
     assert((the_Heap.brk - the_Heap.start_brk) == 0);
-    */int status = heap_setup();
+    status = heap_setup();
     assert(status == 0);
 
     pthread_t thread[10];
     void * (*fun[5]) (void *);
-    fun[0] = f_1;
+    fun[0] = f_0;
     fun[1] = f_1;
-    fun[2] = f_1;
-    fun[3] = f_1;
-    fun[4] = f_1;
+    fun[2] = f_2;
+    fun[3] = f_3;
+    fun[4] = f_4;
 
     for (int i = 0; i < 5; ++i)
     {
@@ -394,11 +421,10 @@ void tests(void)
     for (int i = 0; i < 5; ++i)
     {
         pthread_join(thread[i], NULL);
-        printf("%d in\n", i);
     }
     assert(heap_validate() == 0);
 
-    printf("-- test12 passed\n");
+    printf("-- test11 passed\n");
 
     heap_restart();
     assert((the_Heap.brk - the_Heap.start_brk) == 0);
@@ -408,7 +434,7 @@ void tests(void)
 
 int main(int argc, char **argv)
 {
-    for (int i=0; i < 4; ++i)
+    for (int i=0; i < 20; ++i)
     {
         tests();
     }
