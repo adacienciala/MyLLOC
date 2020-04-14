@@ -15,7 +15,7 @@ void* custom_sbrk(intptr_t delta);
 #endif
 
 
-#define sbrk(__arg__) (assert("Proszę nie używać standardowej funkcji sbrk()" && 0), (void*)-1)
-#define brk(__arg__) (assert("Proszę nie używać standardowej funkcji sbrk()" && 0), -1)
+#define sbrk(__arg__) (assert("Dont's use the standard sbrk()" && 0), (void*)-1)
+#define brk(__arg__) (assert("Dont's use the standard sbrk()" && 0), -1)
 
 #endif // _CUSTOM_UNISTD_H_

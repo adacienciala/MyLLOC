@@ -114,7 +114,7 @@ void tests(void)
 {
     // ----------- OVERALL TESTS ----------- //
     // [1] - multiple malloc allocations     //
-    // [2] - same addresses after free       //
+    // [2] - perfect fits                    //
     // [3] - overwriting the fences          //
     // [4] - restarting the heap             //
     // [5] - calloc allocation               //
@@ -149,9 +149,9 @@ void tests(void)
     printf("-- test1 passed\n");
 
     // ---------------- [2] ---------------- //
-    // ------same addresses after free------ //
+    // ------------perfect fits------------- //
     // ------------------------------------- //
-    // - malloc some space and free it       //
+    // - free allocated space and malloc it  //
     // - malloc perfect fits                 //
     // ------------------------------------- //
 

@@ -12,10 +12,6 @@
 #define SET_FENCES(ptr, count) memcpy((void *)((intptr_t)(ptr) + MEMBLOCK_SIZE), fences.open, FENCE_SIZE); \
 memcpy((void *)((intptr_t)(ptr) + MEMBLOCK_SIZE + FENCE_SIZE + count), fences.close, FENCE_SIZE)
 
-// EW REFACTOR:
-// - int na size_t
-// - intptr_t / void * / struct memblock_t * - ogarniecie lol
-
 int heap_setup(void)
 {
     pthread_mutexattr_init(&attr);
@@ -29,7 +25,6 @@ int heap_setup(void)
         pthread_mutex_unlock(&heap_mutex);
         return -1;
     }
-
 
 	the_Heap.brk = the_Heap.start_brk + MEMBLOCK_SIZE;
 
@@ -243,6 +238,7 @@ void* heap_calloc_debug(size_t number, size_t size, int fileline, const char* fi
         return p;
     }
 }
+
 void* heap_realloc_debug(void* memblock, size_t size, int fileline, const char* filename)
 {
     pthread_mutex_lock(&heap_mutex);
